@@ -30,6 +30,12 @@ use super::storage::{parse_uri, StorageBackend, StorageError, UriError};
 use super::table_state::DeltaTableState;
 use crate::delta_config::DeltaConfigError;
 
+#[cfg(feature = "datafusion-ext")]
+use datafusion::datasource::object_store::ObjectStore;
+
+#[cfg(feature = "datafusion-ext")]
+use std::sync::Arc;
+
 /// Metadata for a checkpoint file
 #[derive(Serialize, Deserialize, Debug, Default, Clone, Copy)]
 pub struct CheckPoint {
@@ -545,6 +551,9 @@ pub struct DeltaTable {
     pub config: DeltaTableConfig,
 
     state: DeltaTableState,
+
+    #[cfg(feature = "datafusion-ext")]
+    pub(crate) object_store: Option<Arc<dyn ObjectStore>>,
 
     // metadata
     // application_transactions
@@ -1179,6 +1188,9 @@ impl DeltaTable {
             last_check_point: None,
             log_uri: log_uri_normalized,
             version_timestamp: HashMap::new(),
+            #[cfg(feature = "datafusion-ext")]
+            object_store: None
+
         })
     }
 

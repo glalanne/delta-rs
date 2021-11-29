@@ -29,7 +29,8 @@ use async_trait::async_trait;
 use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::file_format::FileFormat;
 use datafusion::datasource::object_store::local::LocalFileSystem;
-use datafusion::datasource::{PartitionedFile, TableProvider};
+use datafusion::datasource::object_store::{ObjectStore};
+use datafusion::datasource::{PartitionedFile, TableProvider,};
 use datafusion::logical_plan::Expr;
 use datafusion::physical_plan::file_format::PhysicalPlanConfig;
 use datafusion::physical_plan::ExecutionPlan;
@@ -40,7 +41,16 @@ use crate::action;
 use crate::delta;
 use crate::schema;
 
+
 impl delta::DeltaTable {
+
+    
+
+    /// Set Object store
+    pub fn datafusion_set_object_store(&mut self, store: Arc<dyn ObjectStore>)-> (){
+        self.object_store = Some(store);
+    }
+
     /// Return statistics for Datafusion Table
     pub fn datafusion_table_statistics(&self) -> Statistics {
         let stats = self
@@ -236,6 +246,7 @@ impl TableProvider for delta::DeltaTable {
             delta::DeltaTable::schema(self).unwrap(),
         )?);
         let filenames = self.get_file_uris();
+        //let filename = filenames.clone().get(0).ok_or(datafusion::error::);
 
         let partitions = filenames
             .into_iter()
@@ -248,7 +259,14 @@ impl TableProvider for delta::DeltaTable {
             })
             .collect::<datafusion::error::Result<_>>()?;
 
-        let df_object_store = Arc::new(LocalFileSystem {});
+        let df_object_store: Arc<dyn ObjectStore>;
+
+        if let Some(store) = &self.object_store {
+            df_object_store = Arc::clone(store);
+        }else{
+            df_object_store = Arc::new(LocalFileSystem {});
+        }
+
         ParquetFormat::default()
             .create_physical_plan(
                 PhysicalPlanConfig {
