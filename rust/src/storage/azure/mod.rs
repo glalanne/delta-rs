@@ -270,13 +270,16 @@ impl StorageBackend for AdlsGen2Backend {
         Ok(Box::pin(output))
     }
 
-    async fn put_obj(&self, path: &str, obj_bytes: &[u8]) ->Result<(), StorageError> {
-        debug!("put abfss object: {}...", path);
+    async fn put_obj(&self, path: &str, obj_bytes: &[u8]) -> Result<(), StorageError> {
+        let obj = parse_uri(path)?.into_adlsgen2_object()?;
+        self.validate_container(&obj)?;
+
+        debug!("put abfss object: {}...", obj.path);
 
         self.client
             .as_container_client()
             .await
-            .as_blob_client(path)
+            .as_blob_client(obj.path)
             .put_block_blob(obj_bytes.to_vec())
             .execute()
             .await
@@ -285,12 +288,54 @@ impl StorageBackend for AdlsGen2Backend {
         Ok(())
     }
 
-    async fn rename_obj_noreplace(&self, _src: &str, _dst: &str) -> Result<(), StorageError> {
-        unimplemented!("rename_obj_noreplace not implemented for azure");
+    async fn rename_obj_noreplace(&self, src: &str, dst: &str) -> Result<(), StorageError> {
+        debug!("Rename file source: {}, destination: {}", src, dst);
+
+        // Download the old one
+        let blob = self.get_obj(&src).await.unwrap();
+
+        // Upload the new one if does not exist
+        let dst_meta = self
+            .client
+            .as_container_client()
+            .await
+            .as_blob_client(dst)
+            .get_metadata()
+            .execute()
+            .await;
+
+        // We expect this to fail, because no file should be found
+        // TODO: Parse the error type
+        if dst_meta.is_ok() {
+            return Err(StorageError::AlreadyExists(format!(
+                "Transaction file already exists: {}, please retry operation",
+                dst
+            )));
+        }
+
+        self.put_obj(&dst, &blob).await.unwrap();
+
+        // Delete the old one
+        self.delete_obj(&src).await.unwrap();
+
+        Ok(())
+        //unimplemented!("rename_obj_noreplace not implemented for azure");
     }
 
-    async fn delete_obj(&self, _path: &str) -> Result<(), StorageError> {
-        unimplemented!("delete_obj not implemented for azure");
+    async fn delete_obj(&self, path: &str) -> Result<(), StorageError> {
+        let obj = parse_uri(path)?.into_adlsgen2_object()?;
+        self.validate_container(&obj)?;
+
+        self.client
+            .as_container_client()
+            .await
+            .as_blob_client(obj.path)
+            .delete()
+            .execute()
+            .await
+            .map_err(to_storage_err)?;
+
+        Ok(())
     }
 }
 
